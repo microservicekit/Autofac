@@ -90,7 +90,7 @@ namespace Autofac.Util
                 if ((specialConstraints & GenericParameterAttributes.DefaultConstructorConstraint)
                     != GenericParameterAttributes.None)
                 {
-                    if (!parameterTypeInfo.IsValueType && parameterTypeInfo.DeclaredConstructors.All(c => c.GetParameters().Count() != 0))
+                    if (!parameterTypeInfo.IsValueType && parameterTypeInfo.DeclaredConstructors.All(c => c.GetParameters().Any()))
                     {
                         return false;
                     }
@@ -180,19 +180,20 @@ namespace Autofac.Util
             }
 
             var allGenericParametersMatch = false;
-            var baseType = parameter.GetTypeInfo().BaseType;
+            var baseType = parameter.GetTypeInfo().BaseType ?? parameter;
             if (!constraint.GetTypeInfo().IsInterface &&
                 baseType.GetTypeInfo().IsGenericType &&
                 baseType.GenericTypeArguments.Length > 0 &&
                 baseType.GenericTypeArguments.Length == constraint.GenericTypeArguments.Length)
             {
                 allGenericParametersMatch = true;
-                for (int i = 0; i < baseType.GenericTypeArguments.Length; i++)
+                for (var i = 0; i < baseType.GenericTypeArguments.Length; i++)
                 {
                     var paramArg = baseType.GenericTypeArguments[i];
                     var constraintArg = constraint.GenericTypeArguments[i];
+                    var constraintArgIsGeneric = constraintArg.GetTypeInfo().IsGenericType;
 
-                    allGenericParametersMatch &= paramArg.IsClosedTypeOf(constraintArg.GetGenericTypeDefinition());
+                    allGenericParametersMatch &= paramArg.IsClosedTypeOf(constraintArgIsGeneric ? constraintArg.GetGenericTypeDefinition() : constraintArg);
                 }
             }
 

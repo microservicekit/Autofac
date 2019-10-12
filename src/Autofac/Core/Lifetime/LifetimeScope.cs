@@ -25,11 +25,9 @@
 
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using Autofac.Builder;
 using Autofac.Core.Registration;
@@ -50,6 +48,7 @@ namespace Autofac.Core.Lifetime
         /// </summary>
         private readonly object _synchRoot = new object();
         private readonly ConcurrentDictionary<Guid, object> _sharedInstances = new ConcurrentDictionary<Guid, object>();
+        private object _anonymousTag;
 
         internal static Guid SelfRegistrationId { get; } = Guid.NewGuid();
 
@@ -60,10 +59,8 @@ namespace Autofac.Core.Lifetime
         /// </summary>
         public static readonly object RootTag = "root";
 
-        private static object MakeAnonymousTag()
-        {
-            return new object();
-        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private object MakeAnonymousTag() => _anonymousTag = new object();
 
         private LifetimeScope()
         {
@@ -136,6 +133,8 @@ namespace Autofac.Core.Lifetime
 
         private void CheckTagIsUnique(object tag)
         {
+            if (ReferenceEquals(tag, _anonymousTag)) return;
+
             ISharingLifetimeScope parentScope = this;
             while (parentScope != RootLifetimeScope)
             {
@@ -236,20 +235,25 @@ namespace Autofac.Core.Lifetime
         {
             var builder = new ContainerBuilder(new FallbackDictionary<string, object>(ComponentRegistry.Properties));
 
-            foreach (var source in ComponentRegistry.Sources
-                .Where(src => src.IsAdapterForIndividualComponents))
-                builder.RegisterSource(source);
+            foreach (var source in ComponentRegistry.Sources)
+            {
+                if (source.IsAdapterForIndividualComponents)
+                    builder.RegisterSource(source);
+            }
 
             // Issue #272: Only the most nested parent registry with HasLocalComponents is registered as an external source
             // It provides all non-adapting registrations from itself and from it's parent registries
-            var parent = Traverse.Across<ISharingLifetimeScope>(this, s => s.ParentLifetimeScope)
-                .Where(s => s.ComponentRegistry.HasLocalComponents)
-                .Select(s => new ExternalRegistrySource(s.ComponentRegistry))
-                .FirstOrDefault();
-
-            if (parent != null)
+            ISharingLifetimeScope parent = this;
+            while (parent != null)
             {
-                builder.RegisterSource(parent);
+                if (parent.ComponentRegistry.HasLocalComponents)
+                {
+                    var externalSource = new ExternalRegistrySource(parent.ComponentRegistry);
+                    builder.RegisterSource(externalSource);
+                    break;
+                }
+
+                parent = parent.ParentLifetimeScope;
             }
 
             configurationAction(builder);
@@ -259,27 +263,17 @@ namespace Autofac.Core.Lifetime
             return locals;
         }
 
-        /// <summary>
-        /// Resolve an instance of the provided registration within the context.
-        /// </summary>
-        /// <param name="registration">The registration.</param>
-        /// <param name="parameters">Parameters for the instance.</param>
-        /// <returns>
-        /// The component instance.
-        /// </returns>
-        /// <exception cref="Autofac.Core.Registration.ComponentNotRegisteredException"/>
-        /// <exception cref="DependencyResolutionException"/>
-        public object ResolveComponent(IComponentRegistration registration, IEnumerable<Parameter> parameters)
+        /// <inheritdoc />
+        public object ResolveComponent(ResolveRequest request)
         {
-            if (registration == null) throw new ArgumentNullException(nameof(registration));
-            if (parameters == null) throw new ArgumentNullException(nameof(parameters));
+            if (request == null) throw new ArgumentNullException(nameof(request));
 
             CheckNotDisposed();
 
             var operation = new ResolveOperation(this);
             var handler = ResolveOperationBeginning;
             handler?.Invoke(this, new ResolveOperationBeginningEventArgs(operation));
-            return operation.Execute(registration, parameters);
+            return operation.Execute(request);
         }
 
         /// <summary>

@@ -26,6 +26,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using Autofac.Core.Activators.Delegate;
 using Autofac.Core.Lifetime;
 using Autofac.Core.Registration;
@@ -46,6 +47,7 @@ namespace Autofac.Core
         /// Initializes a new instance of the <see cref="Container"/> class.
         /// </summary>
         /// <param name="properties">The properties used during component registration.</param>
+        [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "Tracked by component registry")]
         internal Container(IDictionary<string, object> properties = null)
         {
             ComponentRegistry = new ComponentRegistry(properties ?? new Dictionary<string, object>());
@@ -155,19 +157,10 @@ namespace Autofac.Core
         /// </summary>
         public IComponentRegistry ComponentRegistry { get; }
 
-        /// <summary>
-        /// Resolve an instance of the provided registration within the context.
-        /// </summary>
-        /// <param name="registration">The registration.</param>
-        /// <param name="parameters">Parameters for the instance.</param>
-        /// <returns>
-        /// The component instance.
-        /// </returns>
-        /// <exception cref="ComponentNotRegisteredException"/>
-        /// <exception cref="DependencyResolutionException"/>
-        public object ResolveComponent(IComponentRegistration registration, IEnumerable<Parameter> parameters)
+        /// <inheritdoc />
+        public object ResolveComponent(ResolveRequest request)
         {
-            return _rootLifetimeScope.ResolveComponent(registration, parameters);
+            return _rootLifetimeScope.ResolveComponent(request);
         }
 
         /// <summary>
